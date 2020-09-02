@@ -20,12 +20,14 @@ def dictgenerator(statusfile_list):
     current_pack = ''
     basedict = {}
     descr_list = []  # for basedict
+    packagelist = []
 
     for line in statusfile_list:
         if line.startswith('Package:', 0, 8):  # We look for lines with Package and create the first level of basedict.
             linep = line.strip('\n')
             list1 = linep.split('ackage: ', 1)
             current_pack = list1[1].strip()
+            packagelist.append(current_pack)
             basedict[current_pack] = {}
         elif line.startswith('Depends:', 0, 8):  # We look for lines with Depends and add to the Package key.
             linede = line.strip('\n')
@@ -46,14 +48,14 @@ def dictgenerator(statusfile_list):
         elif line.startswith(' ', 0, 2) and not line.startswith(' /', 0, 3):
             descr_list.append(line.strip('\n'))
             basedict[current_pack]['Description'] = descr_list
-    return basedict
+    return basedict, packagelist
 
 
 # The packdeplistgen function uses the basedict-dictionary to create a new nested list "packdeplist", with the first
 # index holding a package name in the first subindex and all its dependencies in the following subindexes. We will use
 # this list to create reverse dependencies.
 
-def packdeplistgen(statusfile_list):  # outputs package name and dependency list
+def packdeplistgen(statusfile_list):  # outputs combined package name and dependency list
 
     packdeplist = []  # list package name index[0] and index[1:-1] is packages it needs
 
@@ -79,9 +81,9 @@ def packdeplistgen(statusfile_list):  # outputs package name and dependency list
 # The reversedependency function uses the packdeplist-list to find reverse dependencies for packages. We will use this
 # to create the Rdepends key:value in basedict.
 
-def reversedependency(packdeplist, rddict):  # function for rdepends key
+def reversedependency(pdlist, rddict):  # function for rdepends key
     xdict = {}
-    for level0 in packdeplist:  # This loop compares all list indexes in nested lists to the [0] list index.
+    for level0 in pdlist:  # This loop compares all list indexes in nested lists to the [0] list index.
         for level1 in range(1, len(level0)):
             key = level0[level1]
             xdict.setdefault(key, [])
@@ -101,16 +103,19 @@ def reversedependency(packdeplist, rddict):  # function for rdepends key
     return rddict
 
 
+
+
+
 # The pagecreator function takes the basedict-dictionary (now with all data available) and turns it into HTML.
 # Pagecreator creates the index.html in the root, the directory structure for packages and all HTML pages for every
 # package. HTML pages will include name, description, dependency and reverse dependency neatly formatted.
 
-def pagecreator(basedict):
+def pagecreator(basedict, testmatchlist):
     parent_dir = "Projects/01/"  # Just a random project directory
-    testmatchlist = []
 
     try:  # If paths exist, don't freak out
         os.makedirs(parent_dir, exist_ok=True)
+        os.remove(parent_dir + 'index.html')
     except OSError:
         print(f'Directory {parent_dir} can not be created')
 
@@ -119,9 +124,7 @@ def pagecreator(basedict):
     indexcontentend = '</div></body></html>'
     indexpage.write(indexcontent)
 
-    for directory, value in basedict.items():  # Begin for loop to work with second level of the basedict-dictionary.
-
-        testmatchlist.append(directory)
+    for directory, value in basedict.items():  # Begin for-loop to work with second level of the basedict-dictionary.
 
         path = os.path.join(parent_dir, directory)
         try:
@@ -141,51 +144,35 @@ def pagecreator(basedict):
         # The htmldepnd-variable holds the dependency data for the page HTML.
         # It does a few things. A dependency (or alternative dependency) that refers to a package that's not installed
         # will show up as regular text. A dependency with an existing install will show up as a link to that package.
-        # Tricky because we need to compare the part of the dependency name without the version data.
-        # Currently using conditional statements to parse out matches, but it isn't working very well.
+        # Uses conditional statements to compare dependencies without version data to installed package list.
 
         htmldepnd = ''
         for dkey in value:
             if dkey == 'Depends':
                 for i in value[dkey]:
-                    if i in testmatchlist:  # If the dependency is already in the packagelist
-                        htmldepnd += '<li><a href="https://ratracemaverick.com/parse/' + parent_dir + i + '/' + i + '.html">' + i + '</a></li>'
-                    elif (' (' in i) and not ('|' in i):  #
-                        split1 = i.split(' (', 1)
-                        x = split1[0].strip()
-                        if x in testmatchlist:
-                            htmldepnd += '<li><a href="https://ratracemaverick.com/parse/' + parent_dir + x + '/' + x + '.html">' + split1[0] + ' (' + split1[1] + '</a></li>'
-                        elif x not in testmatchlist:
-                            htmldepnd += '<li>' + split1[0] + ' (' + split1[1] + '</li>'
-                    elif (' (' not in i) and ('|' not in i) and not (i in testmatchlist):
-                        htmldepnd += '<li>' + i + '</li>'
-                    elif ('|' in i) and (' (' not in i):
-                        split2 = i.split(' | ')
+                    if '|' not in i:
+                        if i.partition(' ')[0] in testmatchlist:
+                            htmldepnd += '<li><a href="https://ratracemaverick.com/parse/' + parent_dir + i.partition(' ')[0] + '/' + i.partition(' ')[0] + '.html">' + i + '</a></li>'
+                        else:
+                            htmldepnd += '<li>' + i + '</li>'
+                    elif '|' in i and ')' not in i:
+                        split1 = i.split(' | ')
                         strx = ''
-                        for x in split2:
-                            x = x.strip()
-                            if x in testmatchlist:
-                                strx += '<a href="https://ratracemaverick.com/parse/' + parent_dir + x + '/' + x + '.html">' + x + '</a> | '
-                            elif x not in testmatchlist:
-                                strx += x + ' | '
+                        for j in split1:
+                            if j.strip() in testmatchlist:
+                                strx += '<a href="https://ratracemaverick.com/parse/' + parent_dir + j + '/' + j + '.html">' + j + '</a> | '
+                            else:
+                                strx += j + ' | '
                         htmldepnd += '<li>' + strx.rstrip(' | ') + '</li>'
-                    elif ('|' in i) and (' (' in i):
-                        split3 = i.split(' | ')
-                        strxy = ''
-                        for x in split3:
-                            split4 = x.split(' (', 1)
-                            i = split4[0].strip()
-                            if i in testmatchlist:
-                                try:
-                                    strxy += '<li><a href="https://ratracemaverick.com/parse/' + parent_dir + i + '/' + i + '.html">' + split4[0] + ' (' + split4[1] + '</a></li> | '
-                                except:
-                                    strxy += '<li><a href="https://ratracemaverick.com/parse/' + parent_dir + i + '/' + i + '.html">' + split4[0] + '</a></li> | '
-                            elif i not in testmatchlist:
-                                try:
-                                    strxy += split4[0] + ' (' + split4[1] + ' | '
-                                except:
-                                    strxy += split4[0] + ' | '
-                        htmldepnd = '<li>' + strxy.rstrip(' | ') + '</li>'
+                    else:
+                        split2 = i.split(' | ')
+                        stry = ''
+                        for k in split2:
+                            if k.partition(' ')[0] in testmatchlist:
+                                stry += '<a href="https://ratracemaverick.com/parse/' + parent_dir + k.partition(' ')[0] + '/' + k.partition(' ')[0] + '.html">' + k + '</a> | '
+                            else:
+                                stry += k + ' | '
+                        htmldepnd += '<li>' + stry.rstrip(' | ') + '</li>'
 
         if len(htmldepnd) <= 2:  # If there are no package dependencies
             htmldepnd = 'No current package dependencies.'
@@ -213,12 +200,14 @@ def pagecreator(basedict):
     indexpage.close()
 
 
+# Runtime, opens status-file and moves program run logic along.
+
 if __name__ == '__main__':
     file = 'status'
     so = open(file, 'r', encoding="utf8")
     statusread = so.readlines()
     so.close()
-    firstdict = dictgenerator(statusread)
+    firstdict, packageslist = dictgenerator(statusread)
     plist = packdeplistgen(statusread)
     emodict = reversedependency(plist, firstdict)
-    pagecreator(emodict)
+    pagecreator(emodict, packageslist)
