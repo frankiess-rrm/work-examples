@@ -111,7 +111,7 @@ def reversedependency(pdlist, rddict):  # function for rdepends key
 # package. HTML pages will include name, description, dependency and reverse dependency neatly formatted.
 
 def pagecreator(basedict, testmatchlist):
-    parent_dir = "Projects/01/"  # Just a random project directory
+    parent_dir = "Projects/"  # Just a random project directory
 
     try:  # If paths exist, don't freak out
         os.makedirs(parent_dir, exist_ok=True)
